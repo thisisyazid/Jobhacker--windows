@@ -69,10 +69,6 @@ python desktop/launcher.py
 
 Tests: `pip install pytest && pytest -q`
 
-**Builds.** Every push to `main` runs the tests, builds `JobHacker.exe` on Windows, and checks it starts (`JobHacker.exe --check`). The exe is under the run's **Artifacts** in the Actions tab. To publish a release with a download link, push a version tag:
-
-```sh
-git tag v1.0.1 && git push origin v1.0.1
-```
+**Builds.** Every push to `main` runs the tests, builds `JobHacker.exe` on Windows, and checks it starts (`JobHacker.exe --check`). The exe is under the run's **Artifacts** in the Actions tab. To publish a release with a download link, either push a version tag (`git tag v1.0.1 && git push origin v1.0.1`) or go to **Actions → Build Windows app → Run workflow** and enter the version, e.g. `v1.0.1`.
 
 Settings can be overridden with environment variables: `ANTHROPIC_API_KEY` (instead of pasting it in Settings), `CLAUDE_MODEL`, `DATA_DIR`, `TZ_NAME`.
