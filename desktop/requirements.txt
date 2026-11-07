@@ -1,0 +1,5 @@
+# Extra packages for the Windows app (on top of ../requirements.txt)
+pystray==0.19.5
+Pillow==11.0.0
+tzlocal==5.2
+pyinstaller==6.11.1

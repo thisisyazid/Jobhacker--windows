@@ -1,0 +1,71 @@
+name: Build Windows app
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt pytest
+      - run: pytest -q
+
+  build:
+    needs: test
+    runs-on: windows-latest
+    permissions:
+      contents: write   # attach the exe to a Release when a v* tag is pushed
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -r requirements.txt -r desktop/requirements.txt
+
+      - name: Make the icon
+        run: python desktop/make_icon.py
+
+      - name: Build JobHacker.exe
+        run: >
+          pyinstaller --noconfirm --clean --onefile --windowed
+          --name JobHacker
+          --icon desktop/icon.ico
+          --paths .
+          --add-data "static;static"
+          --collect-submodules app
+          --collect-submodules uvicorn
+          --collect-data tzdata
+          --hidden-import pystray._win32
+          desktop/launcher.py
+
+      - name: Check that it starts
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist\JobHacker.exe -ArgumentList '--check' -Wait -PassThru
+          Get-Content "$env:LOCALAPPDATA\JobHacker\check.log" -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0) { Write-Error "JobHacker.exe --check failed (exit $($p.ExitCode))"; exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JobHacker-windows
+          path: dist/JobHacker.exe
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/JobHacker.exe
+          generate_release_notes: true
