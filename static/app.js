@@ -1131,7 +1131,7 @@ async function renderSettings(params) {
       </div>
 
       <h2>Backup and import</h2>
-      <p class="lead">Download everything as one file to keep it safe or move it to another computer, then bring it back with Import backup. Jobs already saved (same link) are skipped.</p>
+      <p class="lead">Download everything as one file to keep it safe or move it to another computer, then bring it back with Import backup. Jobs already saved (same link) are skipped; if a CSV shows one was reposted, its posted date moves to the newest date in the file.</p>
       <div class="actions">
         <a class="btn" href="/api/export" download>Download backup</a>
         <label class="btn" style="margin:0">Import backup<input type="file" id="imp-json" accept=".json,application/json" hidden></label>
