@@ -1202,6 +1202,7 @@ function importSummary(r) {
   const added = r.jobs ?? r.added ?? 0;
   const parts = [`Imported ${added} job${added === 1 ? "" : "s"}`];
   if (r.duplicates) parts.push(`${r.duplicates} already saved`);
+  if (r.reposted) parts.push(`${r.reposted} reposted (posted date updated)`);
   if (r.dead) parts.push(`${r.dead} taken down left out`);
   if (r.skipped) parts.push(`${r.skipped} without a title skipped`);
   return parts.join(", ") + ". Each row is listed in today's log (Settings → Log files).";
