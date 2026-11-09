@@ -7,11 +7,14 @@ and the UI hides them."""
 from __future__ import annotations
 
 import json
+import logging
 import re
+import time
 import threading
 
 from . import config
 
+log = logging.getLogger("jobhacker.ai")
 ENGINES = ("claude",)
 KEY_SETTING = "anthropic_api_key"
 _client = None
@@ -125,14 +128,18 @@ def _get_client():
 
 def _ask(system: str, user: str, max_tokens: int = 2000, engine: str | None = None, json_mode: bool = False) -> str:
     resolve(engine)
+    t0 = time.monotonic()
     try:
         resp = _get_client().messages.create(
             model=config.CLAUDE_MODEL, max_tokens=max_tokens, system=system,
             messages=[{"role": "user", "content": user}],
         )
     except Exception as e:  # network, auth, rate limit…
+        log.warning("AI call (Claude) failed after %.1fs: %s", time.monotonic() - t0, e.__class__.__name__)
         raise AIError(f"Claude request failed: {e.__class__.__name__}: {e}") from e
-    return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
+    out = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
+    log.info("AI call (Claude): %.1fs, %d chars in, %d chars out", time.monotonic() - t0, len(user), len(out))
+    return out
 
 
 def _json(text: str) -> dict:
