@@ -1139,11 +1139,16 @@ async function renderSettings(params) {
       </div>
       <p class="hint">CSV needs at least a <code>Job title</code> column; <code>Job URL</code>, <code>Company Name</code>, <code>Location</code>, <code>Status</code> and <code>Description</code> are used when present.</p>
 
+      <h2>Log files</h2>
+      <p class="lead">Job Hacker keeps one log file per day of what it did: imports (and what each row became), links read, AI calls, overnight runs and errors. If something looks wrong, download that day's file and send it along. Logs never include your API key, resumes or job descriptions.</p>
+      <div id="logs"><p class="hint">Loading…</p></div>
+
       ${s.auth_required ? raw('<h2>Session</h2><div class="actions"><button class="btn" id="logout">Log out</button></div>') : ""}
     </div>`);
 
   const reload = () => { state.jobs = null; state.session = null; route(); };
   drawNightly(document.getElementById("nightly"));
+  drawLogs(document.getElementById("logs"));
   drawAIKey(document.getElementById("ai-key"));
   const at = { nightly: "h-nightly", ai: "h-ai" }[params?.get("at")];
   if (at) document.getElementById(at)?.scrollIntoView({ block: "start" });
@@ -1192,6 +1197,18 @@ async function renderSettings(params) {
   document.getElementById("logout")?.addEventListener("click", async () => {
     await api("/logout", { method: "POST" }); state.session = null; state.jobs = null; route();
   });
+}
+
+async function drawLogs(box) {
+  if (!box) return;
+  let r;
+  try { r = await api("/logs"); } catch (e) { box.innerHTML = html`<p class="hint">${e.message}</p>`; return; }
+  const size = (b) => (b < 1024 ? `${b} B` : b < 1048576 ? `${Math.round(b / 1024)} KB` : `${(b / 1048576).toFixed(1)} MB`);
+  const day = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+  box.innerHTML = r.files.length
+    ? html`<ul class="log-files">${r.files.slice(0, 14).map((f) => raw(html`<li><a href="/api/logs/${f.name}" download>${day(f.date)}</a> <span class="hint">${size(f.size)}</span></li>`))}</ul>
+      <p class="hint">Kept for ${r.keep_days} days in <code>${r.folder}</code>.</p>`
+    : html`<p class="hint">No log files yet.</p>`;
 }
 
 // ---------- overnight runs ----------

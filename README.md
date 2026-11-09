@@ -42,7 +42,8 @@ The key is checked with Anthropic, then stored only on this PC. Without a key yo
 Everything is in `%LOCALAPPDATA%\JobHacker` (paste that into the Explorer address bar, or use the tray menu → **Open data folder**):
 
 - `jobhacker.db`: your jobs, resumes and settings
-- `jobhacker.log`: what the app did, useful if something goes wrong
+- `jobhacker.log`: the app starting and stopping
+- `logs\jobhacker-YYYY-MM-DD.log`: one file per day of what the app did (imports and what each row became, links read, Claude calls, overnight runs, errors), kept for 30 days. Download them from **Settings → Log files** and send the one for the day something went wrong. They never contain your API key, resumes or job descriptions.
 
 To move to a new PC, use **Settings → Download backup**, then **Import backup** on the new one. The API key isn't in the backup; paste it again on the new PC.
 
