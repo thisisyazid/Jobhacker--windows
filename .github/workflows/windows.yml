@@ -49,6 +49,7 @@ jobs:
           --icon desktop/icon.ico
           --paths .
           --add-data "static;static"
+          --add-data "app/fonts;app/fonts"
           --collect-submodules app
           --collect-submodules uvicorn
           --collect-data tzdata
