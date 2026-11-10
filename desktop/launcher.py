@@ -135,6 +135,13 @@ def check(port: int) -> int:
             if r.status != 200 or must not in body:
                 logging.error("check failed: %s", path)
                 return 1
+    try:  # the PDF export needs the bundled fonts
+        from app.pdf_export import to_pdf
+        if to_pdf("# Check\nx@y.z\nHeadline\n\n## Experience\n- Did things", "resume")[:5] != b"%PDF-":
+            raise ValueError("not a PDF")
+    except Exception:
+        logging.exception("check failed: PDF export")
+        return 1
     logging.info("check passed")
     return 0
 

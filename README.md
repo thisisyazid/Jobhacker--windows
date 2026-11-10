@@ -5,7 +5,7 @@ A job-hunt workbench that runs on your own PC. Paste a link, get the job saved, 
 - **Add from a link.** Reads LinkedIn (public view), MyCareersFuture, and most job boards and company career pages. If a site won't share its details, paste the post's text and Claude fills in the fields.
 - **Pipeline:** Saved → Applied → Interviewing → Offer → Closed, in a sortable table.
 - **Fit check:** a 1–10 score against your resume and what you're looking for, with strengths, gaps and keywords.
-- **Tailored resume and cover letter** per job: copy the text, edit it, or download a Word file.
+- **Tailored resume and cover letter** per job: copy the text, edit it, or download it as a PDF or Word file.
 - **Overnight list:** tick jobs in the Tonight column and their resumes are made at a time you choose.
 - **Backup:** download everything as one file and import it on another PC.
 
