@@ -126,17 +126,30 @@ def _get_client():
         return _client
 
 
+# Current Claude models think before answering, and that thinking counts toward max_tokens.
+# A tight limit cuts the answer off part-way, so give every request generous room
+# (only what's used is billed).
+CLAUDE_MAX_TOKENS = 16000
+
+
 def _ask(system: str, user: str, max_tokens: int = 2000, engine: str | None = None, json_mode: bool = False) -> str:
     resolve(engine)
     t0 = time.monotonic()
     try:
         resp = _get_client().messages.create(
-            model=config.CLAUDE_MODEL, max_tokens=max_tokens, system=system,
+            model=config.CLAUDE_MODEL, max_tokens=max(max_tokens, CLAUDE_MAX_TOKENS), system=system,
             messages=[{"role": "user", "content": user}],
         )
     except Exception as e:  # network, auth, rate limit…
         log.warning("AI call (Claude) failed after %.1fs: %s", time.monotonic() - t0, e.__class__.__name__)
         raise AIError(f"Claude request failed: {e.__class__.__name__}: {e}") from e
+    stop = getattr(resp, "stop_reason", None)
+    if stop == "max_tokens":
+        log.warning("AI call (Claude) was cut off at the token limit after %.1fs", time.monotonic() - t0)
+        raise AIError("Claude's answer was cut off before it finished. Try again.")
+    if stop == "refusal":
+        log.warning("AI call (Claude) was declined after %.1fs", time.monotonic() - t0)
+        raise AIError("Claude declined this request. Try again.")
     out = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
     log.info("AI call (Claude): %.1fs, %d chars in, %d chars out", time.monotonic() - t0, len(user), len(out))
     return out
