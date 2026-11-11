@@ -73,3 +73,7 @@ Tests: `pip install pytest && pytest -q`
 **Builds.** Every push to `main` runs the tests, builds `JobHacker.exe` on Windows, and checks it starts (`JobHacker.exe --check`). The exe is under the run's **Artifacts** in the Actions tab. To publish a release with a download link, either push a version tag (`git tag v1.0.1 && git push origin v1.0.1`) or go to **Actions → Build Windows app → Run workflow** and enter the version, e.g. `v1.0.1`.
 
 Settings can be overridden with environment variables: `ANTHROPIC_API_KEY` (instead of pasting it in Settings), `CLAUDE_MODEL`, `DATA_DIR`, `TZ_NAME`.
+
+## Who made this
+
+Job Hacker is designed and built by Yazid. Want an app like this for you or your team? Get in touch at [thisisyazid.com](https://thisisyazid.com).
