@@ -6,6 +6,7 @@ compatibility; only "claude" exists. When no key is set, AI features are off
 and the UI hides them."""
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import re
@@ -98,6 +99,7 @@ def engines() -> dict:
     ok = bool(claude_key())
     return {
         "claude": {"available": ok, "label": "Claude", "model": config.CLAUDE_MODEL,
+                   "models": [{"id": k, **v} for k, v in config.CLAUDE_MODELS.items()],
                    "reason": "" if ok else "Add your Claude API key in Settings."},
         "default": default_engine(),
     }
@@ -110,8 +112,26 @@ def resolve(engine: str | None = None) -> str:
     return "claude"
 
 
+# The Claude model for the current request or overnight run: set from the app's model picker
+# (X-Claude-Model header) or the overnight settings; falls back to CLAUDE_MODEL.
+_claude_model: contextvars.ContextVar[str | None] = contextvars.ContextVar("claude_model", default=None)
+
+
+def use_claude_model(model: str | None) -> None:
+    _claude_model.set(model if model in config.CLAUDE_MODELS else None)
+
+
+def claude_model() -> str:
+    return _claude_model.get() or config.CLAUDE_MODEL
+
+
+def claude_model_name(model: str | None = None) -> str:
+    m = model or claude_model()
+    return config.CLAUDE_MODELS.get(m, {}).get("name", m)
+
+
 def label(engine: str = "claude") -> str:
-    return f"Claude ({config.CLAUDE_MODEL})"
+    return f"Claude {claude_model_name()}"
 
 
 # ---------- calls ----------
@@ -130,16 +150,26 @@ def _get_client():
 # A tight limit cuts the answer off part-way, so give every request generous room
 # (only what's used is billed).
 CLAUDE_MAX_TOKENS = 16000
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 
 def _ask(system: str, user: str, max_tokens: int = 2000, engine: str | None = None, json_mode: bool = False) -> str:
     resolve(engine)
     t0 = time.monotonic()
+    import anthropic
+    model = claude_model()
+    args = dict(model=model, max_tokens=max(max_tokens, CLAUDE_MAX_TOKENS), system=system,
+                messages=[{"role": "user", "content": user}])
     try:
-        resp = _get_client().messages.create(
-            model=config.CLAUDE_MODEL, max_tokens=max(max_tokens, CLAUDE_MAX_TOKENS), system=system,
-            messages=[{"role": "user", "content": user}],
-        )
+        try:
+            # If the model's safety check declines, Anthropic retries on a suitable model in the same call.
+            resp = _get_client().messages.create(**args, extra_headers={"anthropic-beta": FALLBACK_BETA},
+                                                 extra_body={"fallbacks": "default"})
+        except anthropic.BadRequestError as e:
+            if "fallback" not in str(e).lower():
+                raise
+            log.info("server-side fallback not accepted for %s; sending without it", model)
+            resp = _get_client().messages.create(**args)
     except Exception as e:  # network, auth, rate limit…
         log.warning("AI call (Claude) failed after %.1fs: %s", time.monotonic() - t0, e.__class__.__name__)
         raise AIError(f"Claude request failed: {e.__class__.__name__}: {e}") from e

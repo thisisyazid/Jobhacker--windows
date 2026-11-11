@@ -621,3 +621,43 @@ def test_claude_gets_room_and_cut_off_answers_are_errors(monkeypatch):
     monkeypatch.setattr(ai, "_get_client", lambda: client("refusal"))
     with pytest.raises(ai.AIError, match="declined"):
         ai._ask("s", "u", 1500)
+
+
+def test_choose_claude_model(c, monkeypatch):
+    from types import SimpleNamespace
+    from app import ai, config
+    monkeypatch.setattr(ai, "claude_key", lambda: "test")
+    seen = []
+
+    def create(**kw):
+        seen.append(kw)
+        return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text="# CV\n")])
+    monkeypatch.setattr(ai, "_get_client", lambda: SimpleNamespace(messages=SimpleNamespace(create=create)))
+    models = c.get("/api/session").json()["engines"]["claude"]["models"]
+    assert [m["id"] for m in models] == ["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-2"]
+    c.post("/api/personas", json={"name": "Model CV", "resume_text": "My resume", "is_default": True})
+    j = c.post("/api/jobs", json={"title": "Model job", "description": "Desc"}).json()
+    d = c.post(f"/api/jobs/{j['id']}/documents", json={"kind": "resume"}, headers={"X-Claude-Model": "claude-fable-5-2"}).json()
+    assert seen[-1]["model"] == "claude-fable-5-2" and d["engine"] == "Claude Fable 5.2"
+    c.post(f"/api/jobs/{j['id']}/documents", json={"kind": "resume"})
+    assert seen[-1]["model"] == config.CLAUDE_MODEL
+    assert c.patch("/api/nightly", json={"claude_model": "claude-opus-5-5"}).json()["settings"]["claude_model"] == "claude-opus-5-5"
+    assert c.patch("/api/nightly", json={"claude_model": "nope"}).status_code == 400
+    c.patch("/api/nightly", json={"claude_model": ""})
+
+
+def test_fallback_retried_without_when_not_accepted(monkeypatch):
+    import anthropic, httpx
+    from types import SimpleNamespace
+    from app import ai
+    calls = []
+
+    def create(**kw):
+        calls.append(kw)
+        if "extra_body" in kw:
+            req = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+            raise anthropic.BadRequestError("fallbacks: not supported", response=httpx.Response(400, request=req), body=None)
+        return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text="ok")])
+    monkeypatch.setattr(ai, "resolve", lambda e=None: "claude")
+    monkeypatch.setattr(ai, "_get_client", lambda: SimpleNamespace(messages=SimpleNamespace(create=create)))
+    assert ai._ask("s", "u", 100) == "ok" and len(calls) == 2 and "extra_body" not in calls[1]
