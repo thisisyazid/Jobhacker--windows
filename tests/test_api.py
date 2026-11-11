@@ -104,13 +104,13 @@ def test_ai_fit_and_docs_with_stub(c, monkeypatch):
     monkeypatch.setattr(ai, "claude_key", lambda: "sk-ant-test")
     monkeypatch.setattr(ai, "_ask", lambda system, user, max_tokens=0, **kw:
                         '{"score": 8, "verdict": "Good", "strengths": ["a"], "gaps": ["b"], "keywords": ["k"]}'
-                        if "Score how well" in system else "TAILORED TEXT")
+                        if "Score how well" in system else "TAILORED TEXT.")
     c.post("/api/personas", json={"name": "Main", "resume_text": "My resume"})
     j = c.post("/api/jobs", json={"title": "AI job", "description": "Desc"}).json()
     f = c.post(f"/api/jobs/{j['id']}/fit").json()
     assert f["fit_score"] == 8 and f["fit"]["verdict"] == "Good"
     d = c.post(f"/api/jobs/{j['id']}/documents", json={"kind": "cover_letter"}).json()
-    assert d["content"] == "Dear Hiring Manager,\n\nTAILORED TEXT\n\nKind regards," and d["persona_name"] == "Main"
+    assert d["content"] == "Dear Hiring Manager,\n\nTAILORED TEXT.\n\nKind regards," and d["persona_name"] == "Main"
     assert c.patch(f"/api/documents/{d['id']}", json={"content": "edited"}).json()["content"] == "edited"
     r = c.get(f"/api/documents/{d['id']}/docx")
     assert r.status_code == 200 and r.content[:2] == b"PK"
@@ -233,7 +233,7 @@ def test_claude_is_the_only_engine(c, monkeypatch):
     sent = []
 
     class Block:
-        type, text = "text", "CLAUDE TEXT"
+        type, text = "text", "CLAUDE TEXT."
 
     class Client:
         class messages:
@@ -621,3 +621,64 @@ def test_claude_gets_room_and_cut_off_answers_are_errors(monkeypatch):
     monkeypatch.setattr(ai, "_get_client", lambda: client("refusal"))
     with pytest.raises(ai.AIError, match="declined"):
         ai._ask("s", "u", 1500)
+
+
+def test_choose_claude_model(c, monkeypatch):
+    from types import SimpleNamespace
+    from app import ai, config
+    monkeypatch.setattr(ai, "claude_key", lambda: "test")
+    seen = []
+
+    def create(**kw):
+        seen.append(kw)
+        return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text="# CV\n")])
+    monkeypatch.setattr(ai, "_get_client", lambda: SimpleNamespace(messages=SimpleNamespace(create=create)))
+    models = c.get("/api/session").json()["engines"]["claude"]["models"]
+    assert [m["id"] for m in models] == ["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-2"]
+    c.post("/api/personas", json={"name": "Model CV", "resume_text": "My resume", "is_default": True})
+    j = c.post("/api/jobs", json={"title": "Model job", "description": "Desc"}).json()
+    d = c.post(f"/api/jobs/{j['id']}/documents", json={"kind": "resume"}, headers={"X-Claude-Model": "claude-fable-5-2"}).json()
+    assert seen[-1]["model"] == "claude-fable-5-2" and d["engine"] == "Claude Fable 5.2"
+    from app import logs
+    text = (logs.LOG_DIR / logs.files()[0]["name"]).read_text()
+    assert "Claude claude-fable-5-2: stopped=end_turn" in text and "by Claude Fable 5.2: 2 words" in text
+    c.post(f"/api/jobs/{j['id']}/documents", json={"kind": "resume"})
+    assert seen[-1]["model"] == config.CLAUDE_MODEL
+    assert c.patch("/api/nightly", json={"claude_model": "claude-opus-5-5"}).json()["settings"]["claude_model"] == "claude-opus-5-5"
+    assert c.patch("/api/nightly", json={"claude_model": "nope"}).status_code == 400
+    c.patch("/api/nightly", json={"claude_model": ""})
+
+
+def test_fallback_retried_without_when_not_accepted(monkeypatch):
+    import anthropic, httpx
+    from types import SimpleNamespace
+    from app import ai
+    calls = []
+
+    def create(**kw):
+        calls.append(kw)
+        if "extra_body" in kw:
+            req = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+            raise anthropic.BadRequestError("fallbacks: not supported", response=httpx.Response(400, request=req), body=None)
+        return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text="ok")])
+    monkeypatch.setattr(ai, "resolve", lambda e=None: "claude")
+    monkeypatch.setattr(ai, "_get_client", lambda: SimpleNamespace(messages=SimpleNamespace(create=create)))
+    assert ai._ask("s", "u", 100) == "ok" and len(calls) == 2 and "extra_body" not in calls[1]
+
+
+
+def test_unfinished_cover_letter_is_retried_then_refused(monkeypatch):
+    from app import ai
+    cut = "Dear Hiring Manager,\n\nI led teams at DBS.\n\nAt ESRI Singapore I was"
+    whole = "Dear Hiring Manager,\n\nI led teams at DBS.\n\nI'd welcome a conversation.\n\nKind regards,\nJane Tan"
+    assert ai.letter_unfinished(cut) and ai.letter_unfinished(cut + "\n\nKind regards,\nJane Tan")
+    assert not ai.letter_unfinished(whole)
+    answers = iter([cut, whole])
+    calls = []
+    monkeypatch.setattr(ai, "_ask", lambda s, u, **k: calls.append(u) or next(answers))
+    out = ai.cover_letter("# Jane Tan\nCV", {"title": "PM", "description": "d"})
+    assert out.endswith("Kind regards,\nJane Tan") and "welcome a conversation" in out
+    assert len(calls) == 2 and "stopped in the middle of a sentence" in calls[1]
+    answers = iter([cut, cut])
+    with pytest.raises(ai.AIError, match="unfinished twice"):
+        ai.cover_letter("# Jane Tan\nCV", {"title": "PM", "description": "d"})
