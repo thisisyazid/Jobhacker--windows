@@ -142,6 +142,16 @@ def check(port: int) -> int:
     except Exception:
         logging.exception("check failed: PDF export")
         return 1
+    try:  # Excel export of the job list
+        import io
+        from openpyxl import Workbook
+        buf = io.BytesIO()
+        Workbook().save(buf)
+        if buf.getvalue()[:2] != b"PK":
+            raise ValueError("not an xlsx")
+    except Exception:
+        logging.exception("check failed: Excel export")
+        return 1
     logging.info("check passed")
     return 0
 
