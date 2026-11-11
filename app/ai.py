@@ -174,6 +174,9 @@ def _ask(system: str, user: str, max_tokens: int = 2000, engine: str | None = No
         log.warning("AI call (Claude) failed after %.1fs: %s", time.monotonic() - t0, e.__class__.__name__)
         raise AIError(f"Claude request failed: {e.__class__.__name__}: {e}") from e
     stop = getattr(resp, "stop_reason", None)
+    usage = getattr(resp, "usage", None)
+    log.info("Claude %s: stopped=%s, tokens in=%s out=%s", getattr(resp, "model", model), stop,
+             getattr(usage, "input_tokens", "?"), getattr(usage, "output_tokens", "?"))
     if stop == "max_tokens":
         log.warning("AI call (Claude) was cut off at the token limit after %.1fs", time.monotonic() - t0)
         raise AIError("Claude's answer was cut off before it finished. Try again.")
@@ -345,6 +348,18 @@ def candidate_name(resume: str) -> str:
     return ""
 
 
+def letter_unfinished(text: str) -> bool:
+    """True when a letter's last paragraph stops mid-sentence (the model ran out of room),
+    ignoring a sign-off and name at the end."""
+    lines = [l.strip() for l in re.sub(r"\*\*(.*?)\*\*", r"\1", text).splitlines() if l.strip()]
+    while lines and (CLOSINGS.match(lines[-1]) or (len(lines[-1]) <= 60 and not re.search(r"[.!?:;]$", lines[-1])
+                                                   and len(lines) >= 2 and CLOSINGS.match(lines[-2]))):
+        lines.pop()  # the sign-off line, or the name under it
+    if not lines:
+        return True
+    return not re.search(r"""[.!?…)"'”’]$""", lines[-1])
+
+
 def finish_letter(text: str, name: str = "") -> str:
     """Make sure a cover letter reads as a letter, whatever the model returned:
     plain text, a greeting at the top, and a sign-off with the name at the end."""
@@ -411,4 +426,11 @@ def cover_letter(resume: str, job, extra: str = "", engine: str | None = None) -
     if extra.strip():
         user += f"\n\nEXTRA INSTRUCTIONS FROM THE CANDIDATE:\n{extra}"
     out = _ask(COVER_SYSTEM, user, max_tokens=1500, engine=engine)
+    if letter_unfinished(out):
+        log.warning("cover letter came back unfinished (%d chars, ends %r); asking again", len(out), out[-60:])
+        out = _ask(COVER_SYSTEM, user + "\n\nIMPORTANT: a previous answer stopped in the middle of a sentence. "
+                   "Write the complete letter, ending with the closing paragraph, \"Kind regards,\" and the name.",
+                   max_tokens=1500, engine=engine)
+        if letter_unfinished(out):
+            raise AIError("The cover letter came back unfinished twice, so it wasn't saved. Try again, or pick another model.")
     return finish_letter(out, name)
