@@ -737,3 +737,29 @@ def test_import_skips_archived_jobs_and_flags_reposts_of_them(c):
     # adding by hand finds the archived job too
     again = c.post("/api/jobs", json={"title": "Data Engineer", "company": "Grab", "url": "https://grab.careers/jobs/77/"})
     assert again.status_code == 200 and again.json()["id"] == b["id"]
+
+
+def test_nightly_fit_checks_new_jobs(c):
+    base = c.patch("/api/nightly", json={"fit_new": True}).json()
+    assert base["settings"]["fit_new"] is True
+    before = base["pending"]["fit_new"]
+    c.post("/api/jobs", json={"title": "Fresh import", "description": "Desc", "url": "https://example.com/fresh-1"})
+    c.post("/api/jobs", json={"title": "No description yet", "url": "https://example.com/fresh-2"})
+    p = c.get("/api/nightly").json()["pending"]
+    assert p["fit_new"] == before + 1 and p["all_jobs"] >= p["jobs"] + 1
+    off = c.patch("/api/nightly", json={"fit_new": False}).json()["pending"]
+    assert off["fit_new"] == 0
+
+
+def test_linkedin_helper(c, monkeypatch):
+    from app import ai
+    seen = {}
+    def fake(system, user, **k):
+        seen["system"], seen["user"] = system, user
+        return "HEADLINE OPTIONS\n- **Scrum Master** | Agile Coach\n\nABOUT SECTION\nI help teams."
+    monkeypatch.setattr(ai, "_ask", fake)
+    monkeypatch.setattr(ai, "resolve", lambda e: "claude")
+    r = c.post("/api/linkedin-help", json={"target": "Scrum Master", "profile": "Old headline"}).json()
+    assert r["text"].startswith("HEADLINE OPTIONS") and "**" not in r["text"]
+    assert "TARGET ROLES: Scrum Master" in seen["user"] and "Old headline" in seen["user"]
+    assert "never invent" in seen["system"]
